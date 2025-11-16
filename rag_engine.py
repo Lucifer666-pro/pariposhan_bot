@@ -1,11 +1,11 @@
 import pickle
 import faiss
 import os
-from groq import Groq
 from sentence_transformers import SentenceTransformer
+import google.generativeai as genai
 
-# Initialize Groq
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# Configure Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Load FAISS index
 index = faiss.read_index("data/index.faiss")
@@ -16,25 +16,25 @@ with open("data/index.pkl", "rb") as f:
 
 texts = store["texts"]
 
-# Load embedding model
+# Embedding model
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 def retrieve_context(query):
     emb = embedder.encode([query])
     scores, ids = index.search(emb, k=3)
-
-    context = "\n\n".join(texts[i] for i in ids[0])
-    return context
+    return "\n\n".join(texts[i] for i in ids[0])
 
 
 def answer_from_rag(question):
     context = retrieve_context(question)
 
     prompt = f"""
-You are Pariposhan, a food safety assistant.
-Use ONLY the context below (from official FSSAI PDFs).
-If answer is not available, say: "Please check official FSSAI source."
+You are Pariposhan, a Food Safety and FSSAI assistant.
+Use ONLY the provided context below.
+
+If answer cannot be found, reply:
+"Please check official FSSAI source."
 
 Context:
 {context}
@@ -44,9 +44,6 @@ Question: {question}
 Answer:
 """
 
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return response.choices[0].message.content
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(prompt)
+    return response.text

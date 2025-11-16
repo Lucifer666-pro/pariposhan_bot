@@ -3,5 +3,6 @@ uvicorn
 requests
 faiss-cpu
 sentence-transformers
-groq
+google-generativeai
+twilio
 python-multipart
