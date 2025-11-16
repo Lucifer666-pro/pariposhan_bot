@@ -1,49 +1,49 @@
-import pickle
-import faiss
 import os
+import faiss
+import pickle
 from sentence_transformers import SentenceTransformer
 import google.generativeai as genai
 
-# Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+class RAGEngine:
+    def __init__(self):
+        # Load lightweight embedding model (Render safe)
+        self.embedder = SentenceTransformer("paraphrase-MiniLM-L3-v2")
 
-# Load FAISS index
-index = faiss.read_index("data/index.faiss")
+        # Load FAISS index
+        self.index = faiss.read_index("data/index.faiss")
 
-# Load text chunks
-with open("data/index.pkl", "rb") as f:
-    store = pickle.load(f)
+        # Load text chunks
+        with open("data/index.pkl", "rb") as f:
+            self.texts = pickle.load(f)["texts"]
 
-texts = store["texts"]
+        # Configure Gemini
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        self.llm = genai.GenerativeModel("gemini-pro")
 
-# Embedding model
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    def query(self, question, top_k=3):
+        # Embed question
+        q_emb = self.embedder.encode([question])
+        
+        # Search FAISS
+        distances, indices = self.index.search(q_emb, top_k)
 
+        # Get relevant text
+        retrieved_text = "\n\n".join([self.texts[i] for i in indices[0]])
 
-def retrieve_context(query):
-    emb = embedder.encode([query])
-    scores, ids = index.search(emb, k=3)
-    return "\n\n".join(texts[i] for i in ids[0])
+        # Create prompt
+        prompt = f"""
+You are a food safety assistant (Pariposhan).  
+Answer only from the context provided.
 
+CONTEXT:
+{retrieved_text}
 
-def answer_from_rag(question):
-    context = retrieve_context(question)
+QUESTION:
+{question}
 
-    prompt = f"""
-You are Pariposhan, a Food Safety and FSSAI assistant.
-Use ONLY the provided context below.
-
-If answer cannot be found, reply:
-"Please check official FSSAI source."
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:
+ANSWER:
 """
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(prompt)
-    return response.text
+        # Generate using Gemini
+        response = self.llm.generate_content(prompt)
+        return response.text
